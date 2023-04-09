@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.hooks.postgres_hook import PostgresHook
+from botocore.exceptions import ClientError
 
 # Create Minio client
 minio_client = Minio(
@@ -27,10 +28,51 @@ sender_address = 'thoriq.putra96@gmail.com'
 appPassword = 'ochtztghivmcmmgj'
 receiver_address = 'thoriq.putra96@gmail.com'
 
-def upload_to_minio():
-    # Upload file to Minio
-    minio_client.fput_object("chum-bucket", "product_20230407.csv", "/home/airflow/product_20230407.csv")
+def format_currency(number):
+    currency = str(number)
 
+    if len(currency) <= 3:
+        return 'Rp '+currency
+    else:
+        start = currency[-3:]
+        end = currency[:-3]
+
+        return format_currency(end) + '.' + start
+
+def upload_to_minio():
+    objects = minio_client.list_objects(bucket_name, recursive=True)
+
+    countFile = 0
+    arrFile = []
+    for obj in objects:
+        arrFile.append(obj.object_name)
+
+    countFile = len(arrFile)
+    
+    if countFile < 1:
+        # Upload file to Minio
+        minio_client.fput_object("chum-bucket", "product_20230407.csv", "/home/airflow/product_20230407.csv")
+        print("Berhasil mengupload file. . .")
+    else:
+        print("Sudah ada file pada server minio. . .")
+
+def download_from_minio():
+    objects = minio_client.list_objects(bucket_name, recursive=True)
+
+    countFile = 0
+    arrFile = []
+    for obj in objects:
+        arrFile.append(obj.object_name)
+
+    countFile = len(arrFile)
+    
+    if countFile < 1:
+        print("Tidak ada file yang didownload. . .")
+    else:
+        # Download file from Minio
+        minio_client.fget_object("chum-bucket", "product_20230407.csv", "/home/airflow/product_20230407.csv")
+        print("Berhasil mendownload file. . .")
+    
 def read_from_minio():
     objects = minio_client.list_objects(bucket_name, recursive=True)
     
@@ -88,17 +130,23 @@ def send_email():
     <html>
         <head></head>
         <body>
-            <p>Berikut adalah hasil dari total price : <br>
+            <p>Berikut adalah summarynya : <br>
             </p>
             <table border='1'>
                 <thead>
                     <tr>
+                        <th>Total Sold</th>
                         <th>Total Price</th>
+                        <th>Total Baseprice</th>
+                        <th>Profit</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td>"""+str(profit)+"""</td>
+                        <td>"""+format_currency(str(total_sold))+"""</td>
+                        <td>"""+format_currency(str(total_price))+"""</td>
+                        <td>"""+format_currency(str(total_baseprice))+"""</td>
+                        <td>"""+format_currency(str(profit))+"""</td>
                     </tr>
                 </tbody>
             </table>
@@ -110,7 +158,7 @@ def send_email():
     message = MIMEMultipart()
     message['From'] = sender_address
     message['To'] = receiver_address
-    message['Subject'] = 'Summary Hasil Total Price' # The subject line
+    message['Subject'] = 'Summary Profit' # The subject line
 
     # The body and the attachments for the mail
     # Record the MIME types of both parts - text/plain and text/html.
@@ -139,16 +187,16 @@ default_args = {
 with DAG('project_2', default_args=default_args, schedule_interval='@daily') as dag:
     
     # Task to upload file to Minio
-    # upload_file = PythonOperator(
-    #     task_id='upload_file',
-    #     python_callable=upload_to_minio
-    # )
+    upload_file = PythonOperator(
+        task_id='upload_file',
+        python_callable=upload_to_minio
+    )
 
     # Task to download file from Minio
-    # download_file = PythonOperator(
-    #     task_id='download_file',
-    #     python_callable=download_from_minio
-    # )
+    download_file = PythonOperator(
+        task_id='download_file',
+        python_callable=download_from_minio
+    )
 
     createTable = PostgresOperator(
         task_id = 'create_table',
@@ -175,4 +223,4 @@ with DAG('project_2', default_args=default_args, schedule_interval='@daily') as 
     )
 
     # Set task dependencies
-    createTable >> process_read_file >> process_send_email
+    upload_file >> download_file >> createTable >> process_read_file >> process_send_email
