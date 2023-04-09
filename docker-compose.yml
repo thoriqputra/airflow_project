@@ -60,7 +60,7 @@ x-airflow-common:
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-minio}
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
@@ -74,6 +74,15 @@ x-airflow-common:
       condition: service_healthy
 
 services:
+  mail:
+    image: bytemark/smtp
+    restart: always
+    environment:
+      RELAY_HOST: smtp.example.com
+      RELAY_PORT: 587
+      RELAY_USERNAME: alice@example.com
+      RELAY_PASSWORD: secretpassword
+      
   postgres:
     image: postgres:13
     environment:
@@ -89,6 +98,8 @@ services:
     restart: always
     ports:
       - 5432:5432
+    networks:
+      - airflow-network
       
   pgadmin:
     image: dpage/pgadmin4
@@ -99,6 +110,8 @@ services:
       PGADMIN_DEFAULT_PASSWORD: pass@W0rd1
     ports:
       - 8088:80 # NAT port 8088 to port 80 in the container
+    networks:
+      - airflow-network
 
   redis:
     image: redis:latest
@@ -110,7 +123,9 @@ services:
       timeout: 30s
       retries: 50
     restart: always
-
+    networks:
+      - airflow-network
+      
   airflow-webserver:
     <<: *airflow-common
     command: webserver
@@ -126,7 +141,9 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-
+    networks:
+      - airflow-network
+      
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
@@ -140,6 +157,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+    networks:
+      - airflow-network
 
   airflow-worker:
     <<: *airflow-common
@@ -161,6 +180,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+    networks:
+      - airflow-network
 
   airflow-triggerer:
     <<: *airflow-common
@@ -175,6 +196,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+    networks:
+      - airflow-network
 
   airflow-init:
     <<: *airflow-common
@@ -253,6 +276,8 @@ services:
     user: "0:0"
     volumes:
       - ${AIRFLOW_PROJ_DIR:-.}:/sources
+    networks:
+      - airflow-network
 
   airflow-cli:
     <<: *airflow-common
@@ -266,6 +291,8 @@ services:
       - bash
       - -c
       - airflow
+    networks:
+      - airflow-network
 
   # You can enable flower by adding "--profile flower" option e.g. docker-compose --profile flower up
   # or by explicitly targeted on the command line e.g. docker-compose up flower.
@@ -287,6 +314,13 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+    networks:
+      - airflow-network
 
 volumes:
   postgres-db-volume:
+
+networks:
+  airflow-network:
+    name: airflow-network
+    driver: bridge
