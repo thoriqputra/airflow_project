@@ -88,8 +88,6 @@ def processing_data():
             # conn.commit()
             # cursor.close()
 
-
-
 def delete_file():
     allFiles = glob.glob(str(path+"/*.csv"), recursive=True)
 

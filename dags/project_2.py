@@ -32,12 +32,12 @@ def format_currency(number):
     currency = str(number)
 
     if len(currency) <= 3:
-        return 'Rp '+currency
+        return 'Rp '+ currency
     else:
         start = currency[-3:]
         end = currency[:-3]
 
-        return format_currency(end) + '.' + start
+    return format_currency(end) + '.' + start
 
 def upload_to_minio():
     objects = minio_client.list_objects(bucket_name, recursive=True)
