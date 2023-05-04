@@ -10,15 +10,9 @@ from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.hooks.postgres_hook import PostgresHook
 from pathlib import Path
 import random
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import train_test_split
 from airflow.operators.python_operator import BranchPythonOperator
 from airflow.operators.dummy import DummyOperator
-from airflow.models import XCom
-from airflow.utils.db import provide_session
+from airflow.operators.bash_operator import BashOperator
 
 dag = DAG(
     dag_id="project_final",
@@ -47,7 +41,7 @@ cursor = conn.cursor()
 # The mail addresses and password
 sender_address = 'thoriq.putra96@gmail.com'
 appPassword = 'pshnfggowlbpnjat'
-arrayReceiver = ['thoriq.putra96@gmail.com', 'ahmadfadilfatanm@gmail.com', '3kobudisantoso@gmail.com']
+arrayReceiver = ['thoriq.putra96@gmail.com', 'ahmadfadilfatanm@gmail.com', '3kobudisantoso@gmail.com', 'septha.anggara14@gmail.com']
 receiver_address    = ", ".join(arrayReceiver)
 # receiver_address = 'thoriq.putra96@gmail.com'
 
@@ -210,6 +204,7 @@ def preprocessing_from_minio(**kwargs):
 
                 if countRows < 1:
                     kwargs["ti"].xcom_push(key="params", value = params) # push it as an airflow xcom
+
                     return "update_data"
                 else:
                     send_email("failed")
@@ -227,6 +222,8 @@ def insert(ti):
 
     send_email("success")
 
+    return ["complete"]
+
 def update(ti):
     arrayParams = ti.xcom_pull(key='params')
     
@@ -238,6 +235,8 @@ def update(ti):
         print("Data berhasil di update.")
 
     send_email("success")
+
+    return ["complete"]
 
 def parsing_data():
     print("Data berhasil di baca.")
@@ -337,6 +336,9 @@ def send_email(status):
     
     print('Email telah terkirim.')
 
+def finish():
+    print("Selesai")
+
 # Task to create file to airflow
 createFile = PythonOperator(
     task_id='create_file',
@@ -382,15 +384,22 @@ preProcessing = BranchPythonOperator(
 
 insertData = PythonOperator(
     task_id='insert_data',
-    python_callable=insert
+    python_callable=insert,
+    dag = dag
 )
 
 updateData = PythonOperator(
     task_id='update_data',
-    python_callable=update
+    python_callable=update,
+    dag = dag
 )
 
-complete = DummyOperator(task_id="complete")
+complete = PythonOperator(
+    task_id="complete",
+    python_callable=finish,
+    trigger_rule="one_success",
+    dag = dag
+)
 
 # Set task dependencies
 createFile >> uploadFile >> createTable >> preProcessing >> [insertData, updateData] >> complete
